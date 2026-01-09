@@ -1,9 +1,7 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
-using SimpleTooltip.Scripts.Core;
-using SimpleTooltip.Scripts.Core.Blocks;
+using SimpleTooltip.Scripts.Definitions;
 using SimpleTooltip.Scripts.Enums;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -17,8 +15,8 @@ namespace SimpleTooltip.Scripts
     [RequireComponent(typeof(RectTransform))]
     public class STController : MonoBehaviour
     {
-        [Header("Configuración Principal")]
-        [Tooltip("El Prefab del STPanel")]
+        [Header("Main Configuration")]
+        [Tooltip("The STPanel Prefab")]
         public GameObject panelPrefab;
 
         [Header("Offset Settings (Relative to Mouse)")]
@@ -30,11 +28,11 @@ namespace SimpleTooltip.Scripts
         [Header("Spacing")]
         public float spacing = 10f;
 
-        // Componentes Layout (Debes agregarlos al objeto STController en el editor o se agregarán solos)
+        // Layout Components (Must be added to the STController object in the editor or they will be added automatically)
         private CanvasGroup _canvasGroup;
         private RectTransform _rect;
 
-        // Estado
+        // State
         private List<STPanel> _panelsPool = new();
         private object _currentOwner;
         private TooltipOrientation _currentOrientation;
@@ -44,9 +42,9 @@ namespace SimpleTooltip.Scripts
             _rect = GetComponent<RectTransform>();
             _canvasGroup = GetComponent<CanvasGroup>();
 
-            // Configuración inicial crítica para que el layout manual funcione bien
+            // Critical initial configuration for manual layout to work properly
             _rect.pivot = new Vector2(0, 1);
-            _rect.anchorMin = new Vector2(0.5f, 0.5f); // Anclaje libre para moverlo
+            _rect.anchorMin = new Vector2(0.5f, 0.5f); // Free anchor to move it
             _rect.anchorMax = new Vector2(0.5f, 0.5f);
 
             HideTooltip(null);
@@ -60,89 +58,100 @@ namespace SimpleTooltip.Scripts
             }
         }
 
+        /// <summary>
+        /// Displays the tooltip with the specified data and style.
+        /// </summary>
+        /// <param name="dataList">List of data blocks to display.</param>
+        /// <param name="style">The visual style to apply.</param>
+        /// <param name="orientation">Layout orientation (Horizontal/Vertical).</param>
+        /// <param name="owner">The object requesting the tooltip (for ownership checks).</param>
         public void ShowTooltip(List<TooltipData> dataList, SimpleTooltipStyle style, TooltipOrientation orientation, object owner)
         {
             if (dataList == null || dataList.Count == 0) return;
 
             _currentOwner = owner;
             _currentOrientation = orientation;
-            _canvasGroup.alpha = 0f; // Ocultar mientras construimos
+            _canvasGroup.alpha = 0f; // Hide while building
             gameObject.SetActive(true);
 
-            // 1. Preparar paneles (Pooling)
+            // 1. Prepare panels (Pooling)
             PreparePanels(dataList.Count);
 
-            // 2. Llenar paneles con datos
+            // 2. Fill panels with data
             for (int i = 0; i < dataList.Count; i++)
             {
                 _panelsPool[i].Setup(dataList[i], style);
                 _panelsPool[i].gameObject.SetActive(true);
             }
 
-            // 3. Iniciar proceso de reconstrucción y mostrar
+            // 3. Start rebuild process and show
             StartCoroutine(RebuildRoutine());
         }
 
+        /// <summary>
+        /// Hides the tooltip if the requester is the current owner.
+        /// </summary>
+        /// <param name="requester">The object requesting to hide the tooltip.</param>
         public void HideTooltip(object requester)
         {
             if (_currentOwner != null && _currentOwner != requester) return;
 
             _currentOwner = null;
             gameObject.SetActive(false);
-            // Desactivar todos los paneles para la próxima
+            // Disable all panels for next time
             foreach (var p in _panelsPool) p.gameObject.SetActive(false);
         }
 
-        // --- LOGICA DE POSICIONAMIENTO Y LAYOUT MANUAL ---
+        // --- POSITIONING LOGIC AND MANUAL LAYOUT ---
 
         private void FollowMouseAndLayout()
         {
             Vector2 mousePos = GetMousePosition();
 
-            // 1. Calcular tamaño TOTAL del grupo de tooltips
+            // 1. Calculate TOTAL size of the tooltip group
             Vector2 totalSize = CalculateTotalSize();
             _rect.sizeDelta = totalSize;
 
-            // 2. Mover el Rect al mouse (posición base)
+            // 2. Move Rect to mouse (base position)
             _rect.position = mousePos;
 
-            // 3. Detectar bordes de pantalla
-            // Usamos lossyScale para soportar Canvas Scaler
+            // 3. Detect screen edges
+            // Use lossyScale to support Canvas Scaler
             float scaledWidth = totalSize.x * transform.lossyScale.x;
             float scaledHeight = totalSize.y * transform.lossyScale.y;
 
             bool flipX = (mousePos.x + scaledWidth + offsetTopRight.x > Screen.width);
             bool flipY = (mousePos.y - scaledHeight + offsetTopRight.y < 0);
 
-            // 4. Configurar Offset y Pivote del CONTENEDOR PADRE
+            // 4. Configure Offset and Pivot of the PARENT CONTAINER
             ApplyContainerTransform(mousePos, flipX, flipY);
 
-            // 5. ORDENAR LOS PANELES INTERNAMENTE (La Magia)
-            // Aquí es donde reemplazamos a los LayoutGroups
+            // 5. ARRANGE PANELS INTERNALLY (The Magic)
+            // This is where we replace LayoutGroups
             ArrangePanels(flipX, totalSize);
         }
 
         private void ArrangePanels(bool flipX, Vector2 containerSize)
         {
-            // Posición cursor local para ir colocando paneles
-            // Empezamos siempre desde la esquina superior izquierda del contenedor (0,0 local)
-            // El Pivot del padre se encarga de mover el contenedor, no nosotros.
+            // Local cursor position for placing panels
+            // Always start from the top-left corner of the container (local 0,0)
+            // The parent's Pivot handles moving the container, not us.
             float currentX = 0f;
             float currentY = 0f;
 
-            // Recorremos los paneles activos
-            // Importante: _panelsPool[0] es el PRIMARIO
+            // Iterate through active panels
+            // Important: _panelsPool[0] is the PRIMARY one
 
-            // CASO HORIZONTAL CON FLIP (La lógica especial)
+            // HORIZONTAL CASE WITH FLIP (Special logic)
             if (_currentOrientation == TooltipOrientation.Horizontal && flipX)
             {
-                // Si hay Flip Horizontal (estamos pegados al borde derecho):
-                // El padre tiene Pivot X=1 (Right). El Mouse está a la derecha del contenedor.
-                // Queremos que el PANEL PRIMARIO [0] esté pegado al Mouse (a la derecha).
-                // Queremos que el PANEL SECUNDARIO [1] esté a la izquierda del primario.
+                // If Horizontal Flip (we are stuck to the right edge):
+                // Parent has Pivot X=1 (Right). Mouse is to the right of the container.
+                // We want the PRIMARY PANEL [0] stuck to the Mouse (on the right).
+                // We want the SECONDARY PANEL [1] to the left of the primary.
 
-                // Estrategia: Llenar de Derecha a Izquierda.
-                currentX = containerSize.x; // Empezamos al final
+                // Strategy: Fill from Right to Left.
+                currentX = containerSize.x; // Start at the end
 
                 for (int i = 0; i < _panelsPool.Count; i++)
                 {
@@ -153,18 +162,18 @@ namespace SimpleTooltip.Scripts
 
                     float w = panel.Rect.sizeDelta.x;
 
-                    // Nos movemos a la izquierda para encontrar el punto de inicio de este panel
+                    // Move left to find the start point of this panel
                     currentX -= w;
 
                     panel.Rect.anchoredPosition = new Vector2(currentX, 0);
 
-                    // Espacio para el siguiente (hacia la izquierda)
+                    // Space for the next one (to the left)
                     currentX -= spacing;
                 }
             }
             else
             {
-                // CASO NORMAL (Izquierda a Derecha) o VERTICAL
+                // NORMAL CASE (Left to Right) or VERTICAL
                 for (int i = 0; i < _panelsPool.Count; i++)
                 {
                     var panel = _panelsPool[i];
@@ -181,9 +190,9 @@ namespace SimpleTooltip.Scripts
                     {
                         currentX += w + spacing;
                     }
-                    else // Vertical
+                    else // Vertical (Downwards)
                     {
-                        currentY -= (h + spacing); // Hacia abajo
+                        currentY -= (h + spacing);
                     }
                 }
             }
@@ -191,8 +200,8 @@ namespace SimpleTooltip.Scripts
 
         private void ConfigurePanelAnchor(STPanel panel)
         {
-            // Aseguramos que los paneles hijos tengan anclaje Top-Left standard
-            // para que nuestras matemáticas de posición (0,0) funcionen.
+            // Ensure child panels have standard Top-Left anchor
+            // so our position math (0,0) works.
             panel.Rect.anchorMin = new Vector2(0, 1);
             panel.Rect.anchorMax = new Vector2(0, 1);
             panel.Rect.pivot = new Vector2(0, 1);
@@ -225,7 +234,7 @@ namespace SimpleTooltip.Scripts
                 }
             }
 
-            // Sumar espaciado
+            // Add spacing
             if (activeCount > 1)
             {
                 float totalSpacing = (activeCount - 1) * spacing;
@@ -233,7 +242,7 @@ namespace SimpleTooltip.Scripts
                 else totalH += totalSpacing;
             }
 
-            // Si es horizontal, la altura es la del panel más alto. Si es vertical, el ancho es el del más ancho.
+            // If horizontal, height is that of the tallest panel. If vertical, width is that of the widest.
             return _currentOrientation == TooltipOrientation.Horizontal
                 ? new Vector2(totalW, maxH)
                 : new Vector2(maxW, totalH);
@@ -244,26 +253,26 @@ namespace SimpleTooltip.Scripts
             Vector2 finalOffset;
             Vector2 finalPivot;
 
-            // Lógica de cuadrantes para offset y pivote
-            // Nota: El pivote del Container ayuda a que "crezca" en la dirección correcta
-            // pero el ArrangePanels se encarga de la posición interna.
+            // Quadrant logic for offset and pivot
+            // Note: The Container pivot helps it "grow" in the correct direction
+            // but ArrangePanels handles internal positioning.
 
-            if (!flipX && !flipY) // Normal (Derecha Abajo)
+            if (!flipX && !flipY) // Normal (Right Bottom)
             {
                 finalPivot = new Vector2(0, 1);
                 finalOffset = offsetBottomRight;
             }
-            else if (flipX && !flipY) // Izquierda Abajo
+            else if (flipX && !flipY) // Left Bottom
             {
                 finalPivot = new Vector2(1, 1);
                 finalOffset = offsetBottomLeft;
             }
-            else if (!flipX && flipY) // Derecha Arriba
+            else if (!flipX && flipY) // Right Top
             {
                 finalPivot = new Vector2(0, 0);
                 finalOffset = offsetTopRight;
             }
-            else // Izquierda Arriba
+            else // Left Top
             {
                 finalPivot = new Vector2(1, 0);
                 finalOffset = offsetTopLeft;
@@ -273,20 +282,20 @@ namespace SimpleTooltip.Scripts
             _rect.position = new Vector3(mousePos.x + finalOffset.x, mousePos.y + finalOffset.y, 0f);
         }
 
-        // --- HELPERS INTERNOS ---
+        // --- INTERNAL HELPERS ---
 
         private IEnumerator RebuildRoutine()
         {
-            // 1. Reconstruir tamaño interno de cada panel (ContentSizeFitter)
+            // 1. Rebuild internal size of each panel (ContentSizeFitter)
             foreach (var p in _panelsPool)
                 if (p.gameObject.activeSelf) yield return p.RebuildLayoutRoutine();
 
             yield return new WaitForEndOfFrame();
 
-            // 2. Calcular posiciones una vez que tenemos los tamaños
+            // 2. Calculate positions once we have sizes
             FollowMouseAndLayout();
 
-            // 3. Mostrar
+            // 3. Show
             _canvasGroup.alpha = 1f;
         }
 
@@ -295,7 +304,7 @@ namespace SimpleTooltip.Scripts
             while (_panelsPool.Count < count)
             {
                 GameObject go = Instantiate(panelPrefab, transform);
-                // Importante: Asegurar que los paneles no tengan anclajes extraños que rompan nuestro cálculo manual
+                // Important: Ensure panels don't have strange anchors that break our manual calculation
                 var rt = go.GetComponent<RectTransform>();
                 rt.anchorMin = new Vector2(0, 1);
                 rt.anchorMax = new Vector2(0, 1);

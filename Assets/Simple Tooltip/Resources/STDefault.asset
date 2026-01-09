@@ -14,16 +14,22 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   BackgroundSprite: {fileID: 21300000, guid: 56e9b61d1bc557f48937e76684403739, type: 3}
   BackgroundColor: {r: 0.5019608, g: 0.5019608, b: 0.5019608, a: 1}
-  padding: {x: 10, y: 10, z: 10, w: 10}
+  Padding: {x: 15, y: 15, z: 15, w: 15}
   TextPrefab: {fileID: 3985587072180554212, guid: 9e88c3d3b5d75164fa4ad606e6ade1d0, type: 3}
   ImagePrefab: {fileID: 2865202618159122747, guid: fe7bf2698a62afb4e9a49534e6e6729d, type: 3}
   SeparatorPrefab: {fileID: 0}
   HeaderPrefab: {fileID: 0}
   KeyValuePrefab: {fileID: 0}
   TextStyles:
-  - id: Normal
-    color: {r: 1, g: 1, b: 1, a: 1}
-    fontAsset: {fileID: 11400000, guid: 2ef190b77111ab84ba152f9da434fbae, type: 2}
-    fontSize: 14
-    fontStyle: 0
-    alignment: 513
+  - ID: H1
+    Color: {r: 1, g: 1, b: 1, a: 1}
+    FontAsset: {fileID: 11400000, guid: 2ef190b77111ab84ba152f9da434fbae, type: 2}
+    FontSize: 20
+    FontStyle: 0
+    Alignment: 514
+  - ID: Normal
+    Color: {r: 1, g: 1, b: 1, a: 1}
+    FontAsset: {fileID: 11400000, guid: 2ef190b77111ab84ba152f9da434fbae, type: 2}
+    FontSize: 14
+    FontStyle: 0
+    Alignment: 513

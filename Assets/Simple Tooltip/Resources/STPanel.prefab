@@ -144,9 +144,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ed0889eca5c84245bd2ad7860f8ca62a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: SimpleTooltip::SimpleTooltip.Scripts.STPanel
-  panelBackground: {fileID: 3041612712627532636}
-  contentParent: {fileID: 610751258104079146}
-  maxTooltipWidth: 400
+  PanelBackground: {fileID: 3041612712627532636}
+  ContentParent: {fileID: 610751258104079146}
+  MaxTooltipWidth: 400
 --- !u!1 &9076169531077823889
 GameObject:
   m_ObjectHideFlags: 0

@@ -513,32 +513,44 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: CatrinaGamesToolkit::SimpleTooltip
   SimpleTooltipStyle: {fileID: 11400000, guid: f1d1c287ded68be43934c42c517f05d2, type: 2}
-  orientation: 0
+  Orientation: 0
   TooltipDatas:
-  - rid: 8219086007331979543
-  - rid: 8219086007331979545
+  - rid: 8219086007331979572
+  - rid: 8219086007331979575
   references:
     version: 2
     RefIds:
-    - rid: 8219086007331979543
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979572
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979544
-    - rid: 8219086007331979544
+        - rid: 8219086007331979573
+        - rid: 8219086007331979574
+    - rid: 8219086007331979573
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 1
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979574
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
-    - rid: 8219086007331979545
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979575
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979546
-    - rid: 8219086007331979546
+        - rid: 8219086007331979576
+        - rid: 8219086007331979577
+    - rid: 8219086007331979576
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 2
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979577
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
 --- !u!114 &526904611
 MonoBehaviour:
@@ -678,32 +690,44 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: CatrinaGamesToolkit::SimpleTooltip
   SimpleTooltipStyle: {fileID: 11400000, guid: f1d1c287ded68be43934c42c517f05d2, type: 2}
-  orientation: 1
+  Orientation: 1
   TooltipDatas:
-  - rid: 8219086007331979543
-  - rid: 8219086007331979545
+  - rid: 8219086007331979562
+  - rid: 8219086007331979569
   references:
     version: 2
     RefIds:
-    - rid: 8219086007331979543
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979562
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979544
-    - rid: 8219086007331979544
+        - rid: 8219086007331979563
+        - rid: 8219086007331979568
+    - rid: 8219086007331979563
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 1
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979568
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
-    - rid: 8219086007331979545
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979569
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979546
-    - rid: 8219086007331979546
+        - rid: 8219086007331979570
+        - rid: 8219086007331979571
+    - rid: 8219086007331979570
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 2
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979571
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
 --- !u!114 &1618503030
 MonoBehaviour:
@@ -971,32 +995,44 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: CatrinaGamesToolkit::SimpleTooltip
   SimpleTooltipStyle: {fileID: 11400000, guid: f1d1c287ded68be43934c42c517f05d2, type: 2}
-  orientation: 0
+  Orientation: 0
   TooltipDatas:
-  - rid: 8219086007331979543
-  - rid: 8219086007331979545
+  - rid: 8219086007331979578
+  - rid: 8219086007331979581
   references:
     version: 2
     RefIds:
-    - rid: 8219086007331979543
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979578
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979544
-    - rid: 8219086007331979544
+        - rid: 8219086007331979579
+        - rid: 8219086007331979580
+    - rid: 8219086007331979579
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 1
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979580
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
-    - rid: 8219086007331979545
-      type: {class: TooltipData, ns: SimpleTooltip.Scripts, asm: SimpleTooltip}
+    - rid: 8219086007331979581
+      type: {class: TooltipData, ns: SimpleTooltip.Scripts.Definitions, asm: SimpleTooltip}
       data:
         TooltipBlocks:
-        - rid: 8219086007331979546
-    - rid: 8219086007331979546
+        - rid: 8219086007331979582
+        - rid: 8219086007331979583
+    - rid: 8219086007331979582
       type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
       data:
-        Text: Hello 2
+        Text: Example
+        KeyStyleName: H1
+    - rid: 8219086007331979583
+      type: {class: TooltipTextBlock, ns: SimpleTooltip.Scripts.Core.Blocks, asm: SimpleTooltip}
+      data:
+        Text: Body Example
         KeyStyleName: Normal
 --- !u!1 &1913686761
 GameObject:

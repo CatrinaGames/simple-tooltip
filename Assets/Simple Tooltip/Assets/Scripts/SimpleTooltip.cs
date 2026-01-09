@@ -1,8 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using SimpleTooltip.Scripts.Core;
+﻿using System.Collections.Generic;
+using SimpleTooltip.Scripts.Definitions;
 using SimpleTooltip.Scripts.Enums;
-using SimpleTooltip.Scripts.Models;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
@@ -11,29 +9,44 @@ namespace SimpleTooltip.Scripts
     [DisallowMultipleComponent]
     public class SimpleTooltip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     {
+        /// <summary>
+        /// The visual style to apply to the tooltip.
+        /// </summary>
         [Header("Styling")]
         public SimpleTooltipStyle SimpleTooltipStyle;
-        [Tooltip("Define cómo se organizan los tooltips si hay más de uno.")]
-        public TooltipOrientation orientation = TooltipOrientation.Horizontal;
 
+        /// <summary>
+        /// Defines how tooltips are organized if there is more than one.
+        /// </summary>
+        [Tooltip("Defines how tooltips are organized if there is more than one.")]
+        public TooltipOrientation Orientation = TooltipOrientation.Horizontal;
+
+        /// <summary>
+        /// List of tooltip data to display.
+        /// </summary>
         [Header("Tooltip Content")]
         [SerializeReference] public List<TooltipData> TooltipDatas = new();
 
-        // Referencia al controlador visual (Singleton o buscado)
+        // Reference to the visual controller (Singleton or searched)
         private STController _tooltipController;
 
-        private bool _isUIObject;         // ¿Soy un botón/imagen de UI?
-        private bool _hoveringCollider;   // ¿El mouse está físicamente sobre mi collider?
-        private bool _tooltipVisible;     // ¿El tooltip está activo actualmente?
+        // Am I a UI button/image?
+        private bool _isUIObject;
+
+        // Is the mouse physically over my collider?
+        private bool _hoveringCollider;
+
+        // Is the tooltip currently active?
+        private bool _tooltipVisible;
 
         private void Awake()
         {
             _isUIObject = GetComponent<RectTransform>() != null;
 
-            // Inicialización robusta para encontrar el controlador
+            // Robust initialization to find the controller
             _tooltipController = FindFirstObjectByType<STController>(FindObjectsInactive.Include);
 
-            // Auto-reparación: Cargar prefab si no existe
+            // Auto-repair: Load prefab if it doesn't exist
             if (!_tooltipController)
             {
                 GameObject prefab = Resources.Load<GameObject>("SimpleTooltipManager");
@@ -46,7 +59,7 @@ namespace SimpleTooltip.Scripts
                 }
             }
 
-            // Cargar estilo por defecto si está vacío
+            // Load default style if empty
             if (!SimpleTooltipStyle)
                 SimpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
         }
@@ -55,12 +68,12 @@ namespace SimpleTooltip.Scripts
         {
             if (_isUIObject) return;
 
-            // SI SOY UI:
-            // El EventSystem se encarga de todo. No necesitamos lógica en Update.
+            // IF I AM UI:
+            // The EventSystem handles everything. We don't need logic in Update.
             if (_isUIObject) return;
 
-            // SI SOY UN OBJETO 3D/2D (COLLIDER):
-            // Necesitamos arbitrar cada frame porque la situación "UI bloqueando" cambia dinámicamente
+            // IF I AM A 3D/2D OBJECT (COLLIDER):
+            // We need to arbitrate every frame because the "UI blocking" situation changes dynamically
 
             if (_hoveringCollider)
             {
@@ -68,19 +81,19 @@ namespace SimpleTooltip.Scripts
 
                 if (cursorBlockedByUI && _tooltipVisible)
                 {
-                    // Estoy sobre el objeto, pero entré a un botón UI. Ocultar.
+                    // I am over the object, but entered a UI button. Hide.
                     Hide();
                 }
                 else if (!cursorBlockedByUI && !_tooltipVisible)
                 {
-                    // Estoy sobre el objeto y ya no hay UI estorbando. Mostrar.
+                    // I am over the object and there is no UI blocking anymore. Show.
                     Show();
                 }
             }
         }
 
         // =================================================================================
-        // SISTEMA DE EVENTOS
+        // EVENT SYSTEM
         // =================================================================================
 
         public void OnPointerEnter(PointerEventData eventData)
@@ -93,15 +106,15 @@ namespace SimpleTooltip.Scripts
             if (_isUIObject) Hide();
         }
 
-        // Soporte para objetos físicos (3D/2D Colliders)
+        // Support for physical objects (3D/2D Colliders)
         private void OnMouseEnter()
         {
-            if (_isUIObject) return; // Ignorar si es UI (usa OnPointerEnter)
+            if (_isUIObject) return; // Ignore if it is UI (uses OnPointerEnter)
 
             _hoveringCollider = true;
 
-            // Intentamos mostrar inmediatamente para respuesta rápida,
-            // pero el Update corregirá si hay UI encima.
+            // We try to show immediately for quick response,
+            // but Update will correct if there is UI on top.
             if (!IsPointerOverUI()) Show();
         }
 
@@ -110,31 +123,35 @@ namespace SimpleTooltip.Scripts
             if (_isUIObject) return;
 
             _hoveringCollider = false;
-            Hide(); // Si salimos del collider, siempre ocultamos, haya UI o no.
+            Hide(); // If we exit the collider, always hide, whether there is UI or not.
         }
 
         // =================================================================================
-        // API PÚBLICA (Aquí ocurre la magia)
+        // PUBLIC API
         // =================================================================================
 
         /// <summary>
-        /// Muestra n tooltips. El primero (index 0) es el principal.
+        /// Shows n tooltips. The first one (index 0) is the main one.
         /// </summary>
+        /// <param name="dataList">Optional list of data to override the default content.</param>
         public void Show(List<TooltipData> dataList = null)
         {
-            // GATEKEEPER: Si ya está visible, no regeneramos nada. Ahorro masivo de CPU.
+            // GATEKEEPER: If already visible, do not regenerate anything. Massive CPU saving.
             if (_tooltipVisible) return;
             if (_tooltipController == null) return;
 
             _tooltipVisible = true;
 
             List<TooltipData> finalData = dataList is { Count: > 0 } ? dataList : TooltipDatas;
-            _tooltipController.ShowTooltip(finalData, SimpleTooltipStyle, orientation, this);
+            _tooltipController.ShowTooltip(finalData, SimpleTooltipStyle, Orientation, this);
         }
 
+        /// <summary>
+        /// Hides the tooltip.
+        /// </summary>
         public void Hide()
         {
-            // GATEKEEPER: Si ya está oculto, no hacemos nada.
+            // GATEKEEPER: If already hidden, do nothing.
             if (!_tooltipVisible) return;
 
             _tooltipVisible = false;
@@ -154,7 +171,7 @@ namespace SimpleTooltip.Scripts
 
         private void Reset()
         {
-            // Configuración automática al añadir el script en el editor
+            // Automatic configuration when adding the script in the editor
             if (!SimpleTooltipStyle)
                 SimpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
 

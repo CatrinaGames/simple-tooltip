@@ -1,21 +1,26 @@
-﻿using System.Collections;
+﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using SimpleTooltip.Scripts.Core.Blocks;
+using SimpleTooltip.Scripts.Definitions;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 namespace SimpleTooltip.Scripts
 {
+    /// <summary>
+    /// Controls the individual tooltip panel, handling the instantiation and configuration of content blocks.
+    /// </summary>
     [RequireComponent(typeof(CanvasGroup))]
     [RequireComponent(typeof(VerticalLayoutGroup))]
     [RequireComponent(typeof(ContentSizeFitter))]
     public class STPanel : MonoBehaviour
     {
-        [Header("Referencias UI")] public Image panelBackground;
-        public Transform contentParent;
+        [Header("UI References")] public Image PanelBackground;
+        public Transform ContentParent;
 
-        [Header("Configuración")] public float maxTooltipWidth = 400f;
+        [Header("Configuration")] public float MaxTooltipWidth = 400f;
 
         private List<GameObject> _activeBlocks = new List<GameObject>();
         private RectTransform _rect;
@@ -25,24 +30,29 @@ namespace SimpleTooltip.Scripts
         private void Awake()
         {
             _rect = GetComponent<RectTransform>();
-            if (!panelBackground) panelBackground = GetComponent<Image>();
+            if (!PanelBackground) PanelBackground = GetComponent<Image>();
         }
 
+        /// <summary>
+        /// Sets up the panel with the provided data and style.
+        /// </summary>
+        /// <param name="data">The data containing content blocks.</param>
+        /// <param name="style">The visual style definition.</param>
         public void Setup(TooltipData data, SimpleTooltipStyle style)
         {
-            // 1. Limpiar bloques anteriores
+            // 1. Clear previous blocks
             foreach (var obj in _activeBlocks) Destroy(obj);
             _activeBlocks.Clear();
 
-            // 2. Aplicar Estilo al Panel
-            if (panelBackground && style)
+            // 2. Apply Style to Panel
+            if (PanelBackground && style)
             {
-                panelBackground.sprite = style.BackgroundSprite;
-                panelBackground.color = style.BackgroundColor;
-                panelBackground.type = Image.Type.Sliced;
+                PanelBackground.sprite = style.BackgroundSprite;
+                PanelBackground.color = style.BackgroundColor;
+                PanelBackground.type = Image.Type.Sliced;
             }
 
-            // 3. Instanciar Bloques
+            // 3. Instantiate Blocks
             if (data != null && style != null)
             {
                 foreach (var block in data.TooltipBlocks)
@@ -56,26 +66,29 @@ namespace SimpleTooltip.Scripts
             }
         }
 
+        /// <summary>
+        /// Coroutine to force layout rebuilds to ensure correct sizing.
+        /// </summary>
         public IEnumerator RebuildLayoutRoutine()
         {
-            var contentLE = contentParent.GetComponent<LayoutElement>();
-            var contentRect = contentParent.GetComponent<RectTransform>();
+            var contentLE = ContentParent.GetComponent<LayoutElement>();
+            var contentRect = ContentParent.GetComponent<RectTransform>();
 
-            // 1. Desbloquear ancho para medir natural
+            // 1. Unlock width to measure naturally
             if (contentLE) contentLE.preferredWidth = -1;
 
             yield return new WaitForEndOfFrame();
 
-            // 2. Reconstruir para medir
+            // 2. Rebuild to measure
             LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
 
-            // 3. Aplicar límite si es necesario
-            if (contentLE && contentRect.rect.width > maxTooltipWidth)
+            // 3. Apply limit if necessary
+            if (contentLE && contentRect.rect.width > MaxTooltipWidth)
             {
-                contentLE.preferredWidth = maxTooltipWidth;
+                contentLE.preferredWidth = MaxTooltipWidth;
             }
 
-            // 4. Reconstrucción final
+            // 4. Final rebuild
             LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
             LayoutRebuilder.ForceRebuildLayoutImmediate(Rect);
         }
@@ -123,14 +136,14 @@ namespace SimpleTooltip.Scripts
             style.HeaderPrefab,
             go =>
             {
-                // Asumimos una estructura en el Prefab:
+                // We assume a structure in the Prefab:
                 // - IconImage (Image)
                 // - TextsContainer (VerticalLayout)
                 //    - TitleText (TMP)
                 //    - SubtitleText (TMP)
 
-                // Buscamos componentes por nombre o jerarquía (Simple y efectivo)
-                // Nota: Para máxima performance, crea un script "HeaderViewReference" en el prefab, pero esto funciona bien.
+                // We search for components by name or hierarchy (Simple and effective)
+                // Note: For maximum performance, create a "HeaderViewReference" script on the prefab, but this works well.
 
                 Image icon = go.transform.Find("IconImage")?.GetComponent<Image>();
                 TextMeshProUGUI title = go.transform.Find("TextsContainer/TitleText")?.GetComponent<TextMeshProUGUI>();
@@ -156,10 +169,10 @@ namespace SimpleTooltip.Scripts
             style.KeyValuePrefab,
             go =>
             {
-                // Asumimos Prefab: HorizontalLayout -> [KeyText (Alignment Left)] [ValueText (Alignment Right)]
+                // We assume Prefab: HorizontalLayout -> [KeyText (Alignment Left)] [ValueText (Alignment Right)]
                 TextMeshProUGUI keyTxt = go.transform.Find("KeyText")?.GetComponent<TextMeshProUGUI>();
                 TextMeshProUGUI valTxt = go.transform.Find("ValueText")?.GetComponent<TextMeshProUGUI>();
-                Image icon = go.transform.Find("Icon")?.GetComponent<Image>(); // Opcional
+                Image icon = go.transform.Find("Icon")?.GetComponent<Image>(); // Optional
 
                 if (keyTxt)
                 {
@@ -180,29 +193,28 @@ namespace SimpleTooltip.Scripts
                 }
             });
 
-        private void InstantiateBlock(GameObject prefab, System.Action<GameObject> configure)
+        private void InstantiateBlock(GameObject prefab, Action<GameObject> configure)
         {
             if (!prefab) return;
-            var go = Instantiate(prefab, contentParent);
+            var go = Instantiate(prefab, ContentParent);
             configure?.Invoke(go);
             _activeBlocks.Add(go);
         }
 
-        // Helper para evitar repetir código de estilos
+        // Helper to avoid repeating style code
         private void ApplyTextStyle(TextMeshProUGUI tmp, string styleId, SimpleTooltipStyle style, bool force = false)
         {
             if (tmp == null) return;
             var styleDef = style.GetTextStyle(styleId);
             if (styleDef != null)
             {
-                tmp.font = styleDef.fontAsset;
-                tmp.fontSize = styleDef.fontSize;
-                tmp.color = styleDef.color;
+                tmp.font = styleDef.FontAsset;
+                tmp.fontSize = styleDef.FontSize;
+                tmp.color = styleDef.Color;
                 if (force)
                     tmp.alignment =
-                        styleDef
-                            .alignment; // Cuidado: En KeyValue blocks, la alineación la dicta el prefab, no el estilo
-                tmp.fontStyle = styleDef.fontStyle;
+                        styleDef.Alignment; // Caution: In KeyValue blocks, alignment is dictated by the prefab, not the style
+                tmp.fontStyle = styleDef.FontStyle;
             }
         }
     }
