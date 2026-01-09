@@ -1,33 +1,31 @@
-﻿using UnityEngine;
-using System.Collections;
-using System;
-using UnityEngine.UI;
-using TMPro;
+﻿using System;
 using System.Collections.Generic;
+using SimpleTooltip.Scripts.Models;
+using UnityEngine;
 
-[Serializable]
-[CreateAssetMenu]
-public class SimpleTooltipStyle : ScriptableObject
+namespace SimpleTooltip.Scripts
 {
-    [System.Serializable]
-    public struct Style
+    [Serializable]
+    [CreateAssetMenu]
+    public class SimpleTooltipStyle : ScriptableObject
     {
-        public string tag;
-        public Color color;
-        public bool bold;
-        public bool italic;
-        public bool underline;
-        public bool strikethrough;
+        [Header("Main Container")]
+        public Sprite BackgroundSprite;
+        public Color BackgroundColor = new Color(0.1f, 0.1f, 0.1f, 0.95f);
+        public Vector4 padding = new Vector4(15, 15, 15, 15);
+
+        [Header("Standard Blocks")]
+        public GameObject TextPrefab;       // TextMeshProUGUI
+        public GameObject ImagePrefab;      // Image (Preserve Aspect)
+
+        [Header("Advanced Blocks")]
+        public GameObject SeparatorPrefab;  // Image (altura pequeña, stretch width)
+        public GameObject HeaderPrefab;     // Layout Horizontal: [Image] + [Vertical Layout (Title, Subtitle)]
+        public GameObject KeyValuePrefab;   // Layout Horizontal: [Text (Left)] + [Text (Right)]
+
+        [Header("Typography")]
+        public List<TextStyleData> TextStyles;
+
+        public TextStyleData GetTextStyle(string id) => TextStyles.Find(x => x.id == id);
     }
-
-    [Header("Tooltip Panel")]
-    public Sprite slicedSprite;
-    public Color color = Color.gray;
-
-    [Header("Font")]
-    public TMP_FontAsset fontAsset;
-    public Color defaultColor = Color.white;
-
-    [Header("Formatting")]
-    public Style[] fontStyles;
 }

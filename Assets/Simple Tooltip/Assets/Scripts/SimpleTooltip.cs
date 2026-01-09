@@ -1,133 +1,163 @@
-﻿using System.Collections;
+﻿using System;
 using System.Collections.Generic;
+using SimpleTooltip.Scripts.Core;
+using SimpleTooltip.Scripts.Models;
 using UnityEngine;
 using UnityEngine.EventSystems;
 
-[DisallowMultipleComponent]
-public class SimpleTooltip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
+namespace SimpleTooltip.Scripts
 {
-    public SimpleTooltipStyle simpleTooltipStyle;
-    [TextArea] public string infoLeft = "Hello";
-    [TextArea] public string infoRight = "";
-    private STController tooltipController;
-    private EventSystem eventSystem;
-    private bool cursorInside = false;
-    private bool isUIObject = false;
-    private bool showing = false;
-
-    private void Awake()
+    [DisallowMultipleComponent]
+    public class SimpleTooltip : MonoBehaviour, IPointerEnterHandler, IPointerExitHandler
     {
-        eventSystem = FindObjectOfType<EventSystem>();
-        tooltipController = FindObjectOfType<STController>();
+        [Header("Styling")]
+        public SimpleTooltipStyle SimpleTooltipStyle;
 
-        // Add a new tooltip prefab if one does not exist yet
-        if (!tooltipController)
+        [Header("Tooltip Content")]
+        [SerializeReference] public List<TooltipBlock> TooltipBlocks = new();
+
+        // Referencia al controlador visual (Singleton o buscado)
+        private STController _tooltipController;
+
+        private bool _isUIObject;         // ¿Soy un botón/imagen de UI?
+        private bool _hoveringCollider;   // ¿El mouse está físicamente sobre mi collider?
+        private bool _tooltipVisible;     // ¿El tooltip está activo actualmente?
+
+        private void Awake()
         {
-            tooltipController = AddTooltipPrefabToScene();
-        }
-        if (!tooltipController)
-        {
-            Debug.LogWarning("Could not find the Tooltip prefab");
-            Debug.LogWarning("Make sure you don't have any other prefabs named `SimpleTooltip`");
-        }
+            _isUIObject = GetComponent<RectTransform>() != null;
 
-        if (GetComponent<RectTransform>())
-            isUIObject = true;
+            // Inicialización robusta para encontrar el controlador
+            _tooltipController = FindFirstObjectByType<STController>(FindObjectsInactive.Include);
 
-        // Always make sure there's a style loaded
-        if (!simpleTooltipStyle)
-            simpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
-    }
-
-    private void Update()
-    {
-        if (!cursorInside)
-            return;
-
-        tooltipController.ShowTooltip();
-    }
-
-    public static STController AddTooltipPrefabToScene()
-    {
-        return Instantiate(Resources.Load<GameObject>("SimpleTooltip")).GetComponentInChildren<STController>();
-    }
-
-    private void OnMouseOver()
-    {
-        if (isUIObject)
-            return;
-
-        if (eventSystem)
-        {
-            if (eventSystem.IsPointerOverGameObject())
+            // Auto-reparación: Cargar prefab si no existe
+            if (!_tooltipController)
             {
-                HideTooltip();
-                return;
+                GameObject prefab = Resources.Load<GameObject>("SimpleTooltip");
+                if (prefab)
+                {
+                    GameObject instance = Instantiate(prefab);
+                    instance.name = "SimpleTooltip";
+                    _tooltipController = instance.GetComponentInChildren<STController>();
+                    DontDestroyOnLoad(instance);
+                }
+            }
+
+            // Cargar estilo por defecto si está vacío
+            if (!SimpleTooltipStyle)
+                SimpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
+        }
+
+        private void Update()
+        {
+            if (_isUIObject) return;
+
+            // SI SOY UI:
+            // El EventSystem se encarga de todo. No necesitamos lógica en Update.
+            if (_isUIObject) return;
+
+            // SI SOY UN OBJETO 3D/2D (COLLIDER):
+            // Necesitamos arbitrar cada frame porque la situación "UI bloqueando" cambia dinámicamente
+
+            if (_hoveringCollider)
+            {
+                bool cursorBlockedByUI = IsPointerOverUI();
+
+                if (cursorBlockedByUI && _tooltipVisible)
+                {
+                    // Estoy sobre el objeto, pero entré a un botón UI. Ocultar.
+                    Hide();
+                }
+                else if (!cursorBlockedByUI && !_tooltipVisible)
+                {
+                    // Estoy sobre el objeto y ya no hay UI estorbando. Mostrar.
+                    Show();
+                }
             }
         }
-        ShowTooltip();
-    }
 
-    private void OnMouseExit()
-    {
-        if (isUIObject)
-            return;
-        HideTooltip();
-    }
+        // =================================================================================
+        // SISTEMA DE EVENTOS
+        // =================================================================================
 
-    public void OnPointerEnter(PointerEventData eventData)
-    {
-        if (!isUIObject)
-            return;
-        ShowTooltip();
-    }
+        public void OnPointerEnter(PointerEventData eventData)
+        {
+            if (_isUIObject) Show();
+        }
 
-    public void OnPointerExit(PointerEventData eventData)
-    {
-        if (!isUIObject)
-            return;
-        HideTooltip();
-    }
+        public void OnPointerExit(PointerEventData eventData)
+        {
+            if (_isUIObject) Hide();
+        }
 
-    public void ShowTooltip()
-    {
-        showing = true;
-        cursorInside = true;
+        // Soporte para objetos físicos (3D/2D Colliders)
+        private void OnMouseEnter()
+        {
+            if (_isUIObject) return; // Ignorar si es UI (usa OnPointerEnter)
 
-        // Update the text for both layers
-        tooltipController.SetCustomStyledText(infoLeft, simpleTooltipStyle, STController.TextAlign.Left);
-        tooltipController.SetCustomStyledText(infoRight, simpleTooltipStyle, STController.TextAlign.Right);
+            _hoveringCollider = true;
 
-        // Then tell the controller to show it
-        tooltipController.ShowTooltip();
-    }
+            // Intentamos mostrar inmediatamente para respuesta rápida,
+            // pero el Update corregirá si hay UI encima.
+            if (!IsPointerOverUI()) Show();
+        }
 
-    public void HideTooltip()
-    {
-        if (!showing)
-            return;
-        showing = false;
-        cursorInside = false;
-        tooltipController.HideTooltip();
-    }
+        private void OnMouseExit()
+        {
+            if (_isUIObject) return;
 
-    private void Reset()
-    {
-        // Load the default style if none is specified
-        if (!simpleTooltipStyle)
-            simpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
+            _hoveringCollider = false;
+            Hide(); // Si salimos del collider, siempre ocultamos, haya UI o no.
+        }
 
-        // If UI, nothing else needs to be done
-        if (GetComponent<RectTransform>())
-            return;
+        // =================================================================================
+        // API PÚBLICA (Aquí ocurre la magia)
+        // =================================================================================
 
-        // If has a collider, nothing else needs to be done
-        if (GetComponent<Collider>())
-            return;
+        /// <summary>
+        /// Muestra el tooltip. Si se pasa 'data', usa eso.
+        /// Si 'data' es null, construye los datos basándose en el Inspector.
+        /// </summary>
+        public void Show(List<TooltipBlock> blocks = null)
+        {
+            // GATEKEEPER: Si ya está visible, no regeneramos nada. Ahorro masivo de CPU.
+            if (_tooltipVisible) return;
+            if (_tooltipController == null) return;
 
-        // There were no colliders found when the component is added so we'll add a box collider by default
-        // If you are making a 2D game you can change this to a BoxCollider2D for convenience
-        // You can obviously still swap it manually in the editor but this should speed up development
-        gameObject.AddComponent<BoxCollider>();
+            _tooltipVisible = true;
+
+            List<TooltipBlock> finalBlocks = blocks is { Count: > 0 } ? blocks : TooltipBlocks;
+            _tooltipController.ShowTooltip(finalBlocks, SimpleTooltipStyle, this);
+        }
+
+        public void Hide()
+        {
+            // GATEKEEPER: Si ya está oculto, no hacemos nada.
+            if (!_tooltipVisible) return;
+
+            _tooltipVisible = false;
+
+            if (_tooltipController != null)
+                _tooltipController.HideTooltip(this);
+        }
+
+        // =================================================================================
+        // HELPERS
+        // =================================================================================
+
+        private bool IsPointerOverUI()
+        {
+            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+        }
+
+        private void Reset()
+        {
+            // Configuración automática al añadir el script en el editor
+            if (!SimpleTooltipStyle)
+                SimpleTooltipStyle = Resources.Load<SimpleTooltipStyle>("STDefault");
+
+            if (!GetComponent<RectTransform>() && !GetComponent<Collider>() && !GetComponent<Collider2D>())
+                gameObject.AddComponent<BoxCollider>();
+        }
     }
 }

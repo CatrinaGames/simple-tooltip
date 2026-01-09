@@ -1,225 +1,320 @@
 ﻿using System.Collections;
 using System.Collections.Generic;
+using SimpleTooltip.Scripts.Core;
+using SimpleTooltip.Scripts.Core.Blocks;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro;
 
-/// <summary>
-/// Controller for the Simple Tooltip system.
-/// Handles text resizing, styling, and positioning relative to the mouse cursor with screen boundary checks.
-/// </summary>
-public class STController : MonoBehaviour
+namespace SimpleTooltip.Scripts
 {
-    // Enum to define text alignment options
-    public enum TextAlign { Left, Right };
-
-    [Header("Offset Settings (Relative to Mouse)")]
-    [Tooltip("Normal: Tooltip appears at the top right of the mouse")]
-    public Vector2 offsetTopRight = new Vector2(10f, 10f);
-
-    [Tooltip("Right Border: Tooltip appears above and to the left of the mouse")]
-    public Vector2 offsetTopLeft = new Vector2(-10f, 10f);
-
-    [Tooltip("Top Border: Tooltip appears below and to the right of the mouse")]
-    public Vector2 offsetBottomRight = new Vector2(50f, -20f);
-
-    [Tooltip("Top Right Corner: Tooltip appears below and to the left of the mouse")]
-    public Vector2 offsetBottomLeft = new Vector2(-10f, -20f);
-
-    // UI References
-    private Image panel;
-    private TextMeshProUGUI toolTipTextLeft;
-    private TextMeshProUGUI toolTipTextRight;
-    private RectTransform rect;
-
-    private int showInFrames = -1;
-    private bool showNow = false;
-
-    private void Awake()
+    /// <summary>
+    /// Controller for the Simple Tooltip system.
+    /// Handles text resizing, styling, and positioning relative to the mouse cursor with screen boundary checks.
+    /// </summary>
+    [RequireComponent(typeof(CanvasGroup))]
+    [RequireComponent(typeof(RectTransform))]
+    public class STController : MonoBehaviour
     {
-        // Load up both text layers
-        var tmps = GetComponentsInChildren<TextMeshProUGUI>();
-        for(int i = 0; i < tmps.Length; i++)
-        {
-            if (tmps[i].name == "_left")
-                toolTipTextLeft = tmps[i];
+        [Header("UI References")] public Image panelBackground;
 
-            if (tmps[i].name == "_right")
-                toolTipTextRight = tmps[i];
+        [Tooltip("El contenedor hijo que tiene el VerticalLayoutGroup")]
+        public Transform contentParent;
+
+        [Header("Size Settings")] [Tooltip("El ancho máximo antes de que el texto empiece a saltar de línea.")]
+        public float maxTooltipWidth = 400f;
+
+        [Header("Positioning Settings")] public Vector2 offsetTopRight = new Vector2(10f, 10f);
+        public Vector2 offsetTopLeft = new Vector2(-10f, 10f);
+        public Vector2 offsetBottomRight = new Vector2(50f, -20f);
+        public Vector2 offsetBottomLeft = new Vector2(-10f, -20f);
+
+        private CanvasGroup canvasGroup;
+        private RectTransform rect;
+        private List<GameObject> activeBlocks = new List<GameObject>();
+
+        private object currentOwner;
+
+        private void Awake()
+        {
+            rect = GetComponent<RectTransform>();
+            canvasGroup = GetComponent<CanvasGroup>();
+            if (panelBackground == null) panelBackground = GetComponent<Image>();
+
+            HideTooltip(null);
         }
 
-        // Keep a reference for the panel image and transform
-        panel = GetComponent<Image>();
-        rect = GetComponent<RectTransform>();
-
-        // Hide at the start
-        HideTooltip();
-    }
-
-    void Update()
-    {
-        // Adjust size and visibility every frame
-        ResizeToMatchText();
-        UpdateShow();
-    }
-
-    // Adjusts the tooltip panel height to fit the text content
-    private void ResizeToMatchText()
-    {
-        // Find the biggest height between both text layers
-        var bounds = toolTipTextLeft.textBounds;
-        float biggestY = toolTipTextLeft.textBounds.size.y;
-        float rightY = toolTipTextRight.textBounds.size.y;
-        if (rightY > biggestY)
-            biggestY = rightY;
-
-        // Dont forget to add the margins
-        var margins = toolTipTextLeft.margin.y * 2;
-
-        // Update the height of the tooltip panel
-        rect.sizeDelta = new Vector2(rect.sizeDelta.x, biggestY + margins);
-    }
-
-    // Handles the delay before showing the tooltip and updates its position
-    private void UpdateShow()
-    {
-        if (showInFrames == -1)
-            return;
-
-        if (showInFrames == 0)
-            showNow = true;
-
-        if (showNow)
+        private void Update()
         {
+            if (gameObject.activeSelf)
+            {
+                FollowMouseAndClamp();
+            }
+        }
+
+        public void ShowTooltip(List<TooltipBlock> blocks, SimpleTooltipStyle style, object owner)
+        {
+            if (blocks == null || style == null) return;
+
+            currentOwner = owner;
+
+            // 1. Ocultar mientras se construye
+            canvasGroup.alpha = 0f;
+            gameObject.SetActive(true);
+
+            // 2. Limpieza
+            foreach (var obj in activeBlocks)
+            {
+                if (obj != null) Destroy(obj);
+            }
+
+            activeBlocks.Clear();
+
+            // 3. Estilo Fondo
+            if (panelBackground != null)
+            {
+                panelBackground.sprite = style.BackgroundSprite;
+                panelBackground.color = style.BackgroundColor;
+                panelBackground.type = Image.Type.Sliced;
+            }
+
+            // 4. Generar Bloques
+            foreach (var block in blocks)
+            {
+                // BLOQUES BÁSICOS
+                if (block is TooltipTextBlock textBlock)
+                    CreateTextBlock(textBlock, style);
+                else if (block is TooltipImageBlock imageBlock)
+                    CreateImageBlock(imageBlock, style);
+
+                // BLOQUES AVANZADOS (NUEVOS)
+                else if (block is TooltipSeparatorBlock sepBlock)
+                    CreateSeparatorBlock(sepBlock, style);
+                else if (block is TooltipHeaderBlock headerBlock)
+                    CreateHeaderBlock(headerBlock, style);
+                else if (block is TooltipKeyValueBlock kvBlock)
+                    CreateKeyValueBlock(kvBlock, style);
+            }
+
+            // 5. Reconstrucción inteligente del Layout
+            StartCoroutine(RebuildLayoutRoutine());
+        }
+
+        public void HideTooltip(object requester)
+        {
+            if (currentOwner != null && currentOwner != requester)
+            {
+                return;
+            }
+
+            currentOwner = null;
+            gameObject.SetActive(false);
+            foreach (var obj in activeBlocks) Destroy(obj);
+            activeBlocks.Clear();
+        }
+
+        // =================================================================================
+        // RUTINA DE LAYOUT INTELIGENTE
+        // =================================================================================
+
+        private IEnumerator RebuildLayoutRoutine()
+        {
+            // Referencia al LayoutElement del contenedor de contenido (ContentParent)
+            LayoutElement contentLE = contentParent.GetComponent<LayoutElement>();
+            RectTransform contentRect = contentParent.GetComponent<RectTransform>();
+
+            // PASO 1: Resetear límites para medir el tamaño natural
+            // Desactivamos preferredWidth para que el ContentSizeFitter lo expanda todo lo necesario
+            if (contentLE != null) contentLE.preferredWidth = -1;
+
+            // Esperar fin de frame para que Unity instancie y calcule tamaños iniciales
+            yield return new WaitForEndOfFrame();
+
+            // Forzar reconstrucción para obtener el ancho "natural" (sin saltos de línea)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+
+            // PASO 2: Comprobar si nos pasamos del máximo
+            if (contentLE != null)
+            {
+                // Si el ancho natural supera el máximo permitido...
+                if (contentRect.rect.width > maxTooltipWidth)
+                {
+                    // ...entonces SÍ aplicamos el límite para forzar el Word Wrap (salto de línea)
+                    contentLE.preferredWidth = maxTooltipWidth;
+                }
+                else
+                {
+                    // Si es pequeño, nos aseguramos que siga en automático para que se ajuste al texto
+                    contentLE.preferredWidth = -1;
+                }
+            }
+
+            // PASO 3: Reconstrucción Final
+            // Ahora que hemos decidido si limitar o no, reconstruimos todo el árbol
+            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect); // Ajustar hijo
+            LayoutRebuilder.ForceRebuildLayoutImmediate(rect); // Ajustar padre (fondo)
+
+            // Posicionar y Mostrar
             FollowMouseAndClamp();
+            canvasGroup.alpha = 1f;
         }
 
-        showInFrames -= 1;
-    }
+        // =================================================================================
+        // FACTORIES
+        // =================================================================================
 
-    // --- NEW FEATURE: Border Control ---
-    // Calculates the tooltip position relative to the mouse, ensuring it stays within screen bounds
-    private void FollowMouseAndClamp()
-    {
-        Vector2 mousePos = Input.mousePosition;
-
-        // 1. Calculate the real size on screen
-        float realWidth = rect.sizeDelta.x * transform.lossyScale.x;
-        float realHeight = rect.sizeDelta.y * transform.lossyScale.y;
-
-        // 2. Determine if we need to flip
-        bool flipX = false;
-        bool flipY = false;
-
-        // If it goes out of bounds on the right -> Flip X
-        if (mousePos.x + realWidth > Screen.width)
-            flipX = true;
-
-        // If it goes out of bounds on the top -> Flip Y
-        if (mousePos.y + realHeight > Screen.height)
-            flipY = true;
-
-        // 3. Select the correct Offset and Pivot based on the case
-        Vector2 finalPivot;
-        Vector2 finalOffset;
-
-        if (!flipX && !flipY)
+        private void CreateTextBlock(TooltipTextBlock blockData, SimpleTooltipStyle style)
         {
-            // Normal Case (Top-Right)
-            finalPivot = new Vector2(0, 0);
-            finalOffset = offsetTopRight;
+            if (style.TextPrefab == null) return;
+            GameObject go = Instantiate(style.TextPrefab, contentParent);
+            TextMeshProUGUI tmp = go.GetComponent<TextMeshProUGUI>();
+
+            if (tmp != null)
+            {
+                tmp.text = blockData.Text;
+                ApplyTextStyle(tmp, blockData.KeyStyleName, style, true);
+            }
+
+            activeBlocks.Add(go);
         }
-        else if (flipX && !flipY)
+
+        private void CreateImageBlock(TooltipImageBlock blockData, SimpleTooltipStyle style)
         {
-            // Right Border (Top-Left)
-            finalPivot = new Vector2(1, 0);
-            finalOffset = offsetTopLeft;
+            if (style.ImagePrefab == null) return;
+            GameObject go = Instantiate(style.ImagePrefab, contentParent);
+            Image img = go.GetComponent<Image>();
+            if (img != null)
+            {
+                img.sprite = blockData.Sprite;
+                img.preserveAspect = true;
+            }
+
+            activeBlocks.Add(go);
         }
-        else if (!flipX && flipY)
+
+        private void CreateSeparatorBlock(TooltipSeparatorBlock block, SimpleTooltipStyle style)
         {
-            // Top Border (Bottom-Right)
-            // Special adjustment for top border
-            finalPivot = new Vector2(0, 1);
-            finalOffset = offsetBottomRight;
+            if (style.SeparatorPrefab == null) return;
+            GameObject go = Instantiate(style.SeparatorPrefab, contentParent);
+            Image img = go.GetComponent<Image>();
+            if (img != null)
+            {
+                img.sprite = block.SeparatorSprite;
+            }
+            activeBlocks.Add(go);
         }
-        else
+
+        private void CreateHeaderBlock(TooltipHeaderBlock block, SimpleTooltipStyle style)
         {
-            // Corner (Bottom-Left)
-            finalPivot = new Vector2(1, 1);
-            finalOffset = offsetBottomLeft;
+            if (style.HeaderPrefab == null) return;
+            GameObject go = Instantiate(style.HeaderPrefab, contentParent);
+
+            // Asumimos una estructura en el Prefab:
+            // - IconImage (Image)
+            // - TextsContainer (VerticalLayout)
+            //    - TitleText (TMP)
+            //    - SubtitleText (TMP)
+
+            // Buscamos componentes por nombre o jerarquía (Simple y efectivo)
+            // Nota: Para máxima performance, crea un script "HeaderViewReference" en el prefab, pero esto funciona bien.
+
+            Image icon = go.transform.Find("IconImage")?.GetComponent<Image>();
+            TextMeshProUGUI title = go.transform.Find("TextsContainer/TitleText")?.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI subtitle =
+                go.transform.Find("TextsContainer/SubtitleText")?.GetComponent<TextMeshProUGUI>();
+
+            if (icon) icon.sprite = block.Icon;
+
+            if (title)
+            {
+                title.text = block.Title;
+                ApplyTextStyle(title, block.KeyTitleStyle, style, true);
+            }
+
+            if (subtitle)
+            {
+                subtitle.text = block.Subtitle;
+                ApplyTextStyle(subtitle, block.KeySubtitleStyle, style, true);
+            }
+
+            activeBlocks.Add(go);
         }
 
-        // 4. Apply changes
-        rect.pivot = finalPivot;
-        rect.position = new Vector3(mousePos.x + finalOffset.x, mousePos.y + finalOffset.y, 0f);
-    }
-    // ----------------------------------------
-
-    // Sets the text content without changing the style
-    public void SetRawText(string text, TextAlign align = TextAlign.Left)
-    {
-        // Doesn't change style, just the text
-        if(align == TextAlign.Left)
-            toolTipTextLeft.text = text;
-        if (align == TextAlign.Right)
-            toolTipTextRight.text = text;
-        ResizeToMatchText();
-    }
-
-    // Sets the text content and applies a specific visual style
-    public void SetCustomStyledText(string text, SimpleTooltipStyle style, TextAlign align = TextAlign.Left)
-    {
-        // Update the panel sprite and color
-        panel.sprite = style.slicedSprite;
-        panel.color = style.color;
-
-        // Update the font asset, size and default color
-        toolTipTextLeft.font = style.fontAsset;
-        toolTipTextLeft.color = style.defaultColor;
-        toolTipTextRight.font = style.fontAsset;
-        toolTipTextRight.color = style.defaultColor;
-
-        // Convert all tags to TMPro markup
-        var styles = style.fontStyles;
-        for(int i = 0; i < styles.Length; i++)
+        private void CreateKeyValueBlock(TooltipKeyValueBlock block, SimpleTooltipStyle style)
         {
-            string addTags = "</b></i></u></s>";
-            addTags += "<color=#" + ColorToHex(styles[i].color) + ">";
-            if (styles[i].bold) addTags += "<b>";
-            if (styles[i].italic) addTags += "<i>";
-            if (styles[i].underline) addTags += "<u>";
-            if (styles[i].strikethrough) addTags += "<s>";
-            text = text.Replace(styles[i].tag, addTags);
+            if (style.KeyValuePrefab == null) return;
+            GameObject go = Instantiate(style.KeyValuePrefab, contentParent);
+
+            // Asumimos Prefab: HorizontalLayout -> [KeyText (Alignment Left)] [ValueText (Alignment Right)]
+            TextMeshProUGUI keyTxt = go.transform.Find("KeyText")?.GetComponent<TextMeshProUGUI>();
+            TextMeshProUGUI valTxt = go.transform.Find("ValueText")?.GetComponent<TextMeshProUGUI>();
+            Image icon = go.transform.Find("Icon")?.GetComponent<Image>(); // Opcional
+
+            if (keyTxt)
+            {
+                keyTxt.text = block.Key;
+                ApplyTextStyle(keyTxt, block.KeyKeyStyle, style);
+            }
+
+            if (valTxt)
+            {
+                valTxt.text = block.Value;
+                ApplyTextStyle(valTxt, block.KeyValueStyle, style);
+            }
+
+            if (icon)
+            {
+                icon.gameObject.SetActive(block.Icon != null);
+                icon.sprite = block.Icon;
+            }
+
+            activeBlocks.Add(go);
         }
-        if (align == TextAlign.Left)
-            toolTipTextLeft.text = text;
-        if (align == TextAlign.Right)
-            toolTipTextRight.text = text;
-        ResizeToMatchText();
-    }
 
-    // Helper function to convert a Unity Color to a Hex string
-    public string ColorToHex(Color color)
-    {
-        int r = (int)(color.r * 255);
-        int g = (int)(color.g * 255);
-        int b = (int)(color.b * 255);
-        return r.ToString("X2") + g.ToString("X2") + b.ToString("X2");
-    }
+        // Helper para evitar repetir código de estilos
+        private void ApplyTextStyle(TextMeshProUGUI tmp, string styleId, SimpleTooltipStyle style, bool force = false)
+        {
+            if (tmp == null) return;
+            var styleDef = style.GetTextStyle(styleId);
+            if (styleDef != null)
+            {
+                tmp.font = styleDef.fontAsset;
+                tmp.fontSize = styleDef.fontSize;
+                tmp.color = styleDef.color;
+                if (force) tmp.alignment = styleDef.alignment; // Cuidado: En KeyValue blocks, la alineación la dicta el prefab, no el estilo
+                tmp.fontStyle = styleDef.fontStyle;
+            }
+        }
 
-    public void ShowTooltip()
-    {
-        // After 2 frames, showNow will be set to TRUE
-        // after that the frame count wont matter
-        if (showInFrames == -1)
-            showInFrames = 2;
-    }
+        private void FollowMouseAndClamp()
+        {
+            Vector2 mousePos = Vector2.zero;
 
-    public void HideTooltip()
+#if ENABLE_LEGACY_INPUT_MANAGER
+            mousePos = Input.mousePosition;
+#elif ENABLE_INPUT_SYSTEM
+    // Usamos Pointer.current para dar soporte tanto a Mouse como a Pen/Touch simulado
+    if (UnityEngine.InputSystem.Pointer.current != null)
     {
-        showInFrames = -1;
-        showNow = false;
-        // Move the tooltip off-screen
-        rect.anchoredPosition = new Vector2(Screen.currentResolution.width, Screen.currentResolution.height);
+        mousePos = UnityEngine.InputSystem.Pointer.current.position.ReadValue();
+    }
+#endif
+            float realWidth = rect.sizeDelta.x * transform.lossyScale.x;
+            float realHeight = rect.sizeDelta.y * transform.lossyScale.y;
+
+            bool flipX = (mousePos.x + realWidth > Screen.width);
+            bool flipY = (mousePos.y + realHeight > Screen.height);
+
+            Vector2 finalPivot = new Vector2(flipX ? 1 : 0, flipY ? 1 : 0);
+            Vector2 finalOffset;
+
+            if (!flipX && !flipY) finalOffset = offsetTopRight;
+            else if (flipX && !flipY) finalOffset = offsetTopLeft;
+            else if (!flipX && flipY) finalOffset = offsetBottomRight;
+            else finalOffset = offsetBottomLeft;
+
+            rect.pivot = finalPivot;
+            rect.position = new Vector3(mousePos.x + finalOffset.x, mousePos.y + finalOffset.y, 0f);
+        }
     }
 }
