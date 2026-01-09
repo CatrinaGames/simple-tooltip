@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using SimpleTooltip.Scripts.Core;
+using SimpleTooltip.Scripts.Enums;
 using SimpleTooltip.Scripts.Models;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -12,9 +13,11 @@ namespace SimpleTooltip.Scripts
     {
         [Header("Styling")]
         public SimpleTooltipStyle SimpleTooltipStyle;
+        [Tooltip("Define cómo se organizan los tooltips si hay más de uno.")]
+        public TooltipOrientation orientation = TooltipOrientation.Horizontal;
 
         [Header("Tooltip Content")]
-        [SerializeReference] public List<TooltipBlock> TooltipBlocks = new();
+        [SerializeReference] public List<TooltipData> TooltipDatas = new();
 
         // Referencia al controlador visual (Singleton o buscado)
         private STController _tooltipController;
@@ -33,11 +36,11 @@ namespace SimpleTooltip.Scripts
             // Auto-reparación: Cargar prefab si no existe
             if (!_tooltipController)
             {
-                GameObject prefab = Resources.Load<GameObject>("SimpleTooltip");
+                GameObject prefab = Resources.Load<GameObject>("SimpleTooltipManager");
                 if (prefab)
                 {
                     GameObject instance = Instantiate(prefab);
-                    instance.name = "SimpleTooltip";
+                    instance.name = "SimpleTooltipManager";
                     _tooltipController = instance.GetComponentInChildren<STController>();
                     DontDestroyOnLoad(instance);
                 }
@@ -115,10 +118,9 @@ namespace SimpleTooltip.Scripts
         // =================================================================================
 
         /// <summary>
-        /// Muestra el tooltip. Si se pasa 'data', usa eso.
-        /// Si 'data' es null, construye los datos basándose en el Inspector.
+        /// Muestra n tooltips. El primero (index 0) es el principal.
         /// </summary>
-        public void Show(List<TooltipBlock> blocks = null)
+        public void Show(List<TooltipData> dataList = null)
         {
             // GATEKEEPER: Si ya está visible, no regeneramos nada. Ahorro masivo de CPU.
             if (_tooltipVisible) return;
@@ -126,8 +128,8 @@ namespace SimpleTooltip.Scripts
 
             _tooltipVisible = true;
 
-            List<TooltipBlock> finalBlocks = blocks is { Count: > 0 } ? blocks : TooltipBlocks;
-            _tooltipController.ShowTooltip(finalBlocks, SimpleTooltipStyle, this);
+            List<TooltipData> finalData = dataList is { Count: > 0 } ? dataList : TooltipDatas;
+            _tooltipController.ShowTooltip(finalData, SimpleTooltipStyle, orientation, this);
         }
 
         public void Hide()

@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using SimpleTooltip.Scripts.Core;
 using SimpleTooltip.Scripts.Core.Blocks;
+using SimpleTooltip.Scripts.Enums;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,30 +17,37 @@ namespace SimpleTooltip.Scripts
     [RequireComponent(typeof(RectTransform))]
     public class STController : MonoBehaviour
     {
-        [Header("UI References")] public Image panelBackground;
+        [Header("Configuración Principal")]
+        [Tooltip("El Prefab del STPanel")]
+        public GameObject panelPrefab;
 
-        [Tooltip("El contenedor hijo que tiene el VerticalLayoutGroup")]
-        public Transform contentParent;
+        [Header("Offset Settings (Relative to Mouse)")]
+        public Vector2 offsetTopRight = new Vector2(25f, 0f);
+        public Vector2 offsetTopLeft = new Vector2(-5f, 5f);
+        public Vector2 offsetBottomRight = new Vector2(30f, -25f);
+        public Vector2 offsetBottomLeft = new Vector2(-15f, -15f);
 
-        [Header("Size Settings")] [Tooltip("El ancho máximo antes de que el texto empiece a saltar de línea.")]
-        public float maxTooltipWidth = 400f;
+        [Header("Spacing")]
+        public float spacing = 10f;
 
-        [Header("Positioning Settings")] public Vector2 offsetTopRight = new Vector2(10f, 10f);
-        public Vector2 offsetTopLeft = new Vector2(-10f, 10f);
-        public Vector2 offsetBottomRight = new Vector2(50f, -20f);
-        public Vector2 offsetBottomLeft = new Vector2(-10f, -20f);
+        // Componentes Layout (Debes agregarlos al objeto STController en el editor o se agregarán solos)
+        private CanvasGroup _canvasGroup;
+        private RectTransform _rect;
 
-        private CanvasGroup canvasGroup;
-        private RectTransform rect;
-        private List<GameObject> activeBlocks = new List<GameObject>();
-
-        private object currentOwner;
+        // Estado
+        private List<STPanel> _panelsPool = new();
+        private object _currentOwner;
+        private TooltipOrientation _currentOrientation;
 
         private void Awake()
         {
-            rect = GetComponent<RectTransform>();
-            canvasGroup = GetComponent<CanvasGroup>();
-            if (panelBackground == null) panelBackground = GetComponent<Image>();
+            _rect = GetComponent<RectTransform>();
+            _canvasGroup = GetComponent<CanvasGroup>();
+
+            // Configuración inicial crítica para que el layout manual funcione bien
+            _rect.pivot = new Vector2(0, 1);
+            _rect.anchorMin = new Vector2(0.5f, 0.5f); // Anclaje libre para moverlo
+            _rect.anchorMax = new Vector2(0.5f, 0.5f);
 
             HideTooltip(null);
         }
@@ -48,273 +56,275 @@ namespace SimpleTooltip.Scripts
         {
             if (gameObject.activeSelf)
             {
-                FollowMouseAndClamp();
+                FollowMouseAndLayout();
             }
         }
 
-        public void ShowTooltip(List<TooltipBlock> blocks, SimpleTooltipStyle style, object owner)
+        public void ShowTooltip(List<TooltipData> dataList, SimpleTooltipStyle style, TooltipOrientation orientation, object owner)
         {
-            if (blocks == null || style == null) return;
+            if (dataList == null || dataList.Count == 0) return;
 
-            currentOwner = owner;
-
-            // 1. Ocultar mientras se construye
-            canvasGroup.alpha = 0f;
+            _currentOwner = owner;
+            _currentOrientation = orientation;
+            _canvasGroup.alpha = 0f; // Ocultar mientras construimos
             gameObject.SetActive(true);
 
-            // 2. Limpieza
-            foreach (var obj in activeBlocks)
+            // 1. Preparar paneles (Pooling)
+            PreparePanels(dataList.Count);
+
+            // 2. Llenar paneles con datos
+            for (int i = 0; i < dataList.Count; i++)
             {
-                if (obj != null) Destroy(obj);
+                _panelsPool[i].Setup(dataList[i], style);
+                _panelsPool[i].gameObject.SetActive(true);
             }
 
-            activeBlocks.Clear();
-
-            // 3. Estilo Fondo
-            if (panelBackground != null)
-            {
-                panelBackground.sprite = style.BackgroundSprite;
-                panelBackground.color = style.BackgroundColor;
-                panelBackground.type = Image.Type.Sliced;
-            }
-
-            // 4. Generar Bloques
-            foreach (var block in blocks)
-            {
-                // BLOQUES BÁSICOS
-                if (block is TooltipTextBlock textBlock)
-                    CreateTextBlock(textBlock, style);
-                else if (block is TooltipImageBlock imageBlock)
-                    CreateImageBlock(imageBlock, style);
-
-                // BLOQUES AVANZADOS (NUEVOS)
-                else if (block is TooltipSeparatorBlock sepBlock)
-                    CreateSeparatorBlock(sepBlock, style);
-                else if (block is TooltipHeaderBlock headerBlock)
-                    CreateHeaderBlock(headerBlock, style);
-                else if (block is TooltipKeyValueBlock kvBlock)
-                    CreateKeyValueBlock(kvBlock, style);
-            }
-
-            // 5. Reconstrucción inteligente del Layout
-            StartCoroutine(RebuildLayoutRoutine());
+            // 3. Iniciar proceso de reconstrucción y mostrar
+            StartCoroutine(RebuildRoutine());
         }
 
         public void HideTooltip(object requester)
         {
-            if (currentOwner != null && currentOwner != requester)
-            {
-                return;
-            }
+            if (_currentOwner != null && _currentOwner != requester) return;
 
-            currentOwner = null;
+            _currentOwner = null;
             gameObject.SetActive(false);
-            foreach (var obj in activeBlocks) Destroy(obj);
-            activeBlocks.Clear();
+            // Desactivar todos los paneles para la próxima
+            foreach (var p in _panelsPool) p.gameObject.SetActive(false);
         }
 
-        // =================================================================================
-        // RUTINA DE LAYOUT INTELIGENTE
-        // =================================================================================
+        // --- LOGICA DE POSICIONAMIENTO Y LAYOUT MANUAL ---
 
-        private IEnumerator RebuildLayoutRoutine()
+        private void FollowMouseAndLayout()
         {
-            // Referencia al LayoutElement del contenedor de contenido (ContentParent)
-            LayoutElement contentLE = contentParent.GetComponent<LayoutElement>();
-            RectTransform contentRect = contentParent.GetComponent<RectTransform>();
+            Vector2 mousePos = GetMousePosition();
 
-            // PASO 1: Resetear límites para medir el tamaño natural
-            // Desactivamos preferredWidth para que el ContentSizeFitter lo expanda todo lo necesario
-            if (contentLE != null) contentLE.preferredWidth = -1;
+            // 1. Calcular tamaño TOTAL del grupo de tooltips
+            Vector2 totalSize = CalculateTotalSize();
+            _rect.sizeDelta = totalSize;
 
-            // Esperar fin de frame para que Unity instancie y calcule tamaños iniciales
+            // 2. Mover el Rect al mouse (posición base)
+            _rect.position = mousePos;
+
+            // 3. Detectar bordes de pantalla
+            // Usamos lossyScale para soportar Canvas Scaler
+            float scaledWidth = totalSize.x * transform.lossyScale.x;
+            float scaledHeight = totalSize.y * transform.lossyScale.y;
+
+            bool flipX = (mousePos.x + scaledWidth + offsetTopRight.x > Screen.width);
+            bool flipY = (mousePos.y - scaledHeight + offsetTopRight.y < 0);
+
+            // 4. Configurar Offset y Pivote del CONTENEDOR PADRE
+            ApplyContainerTransform(mousePos, flipX, flipY);
+
+            // 5. ORDENAR LOS PANELES INTERNAMENTE (La Magia)
+            // Aquí es donde reemplazamos a los LayoutGroups
+            ArrangePanels(flipX, totalSize);
+        }
+
+        private void ArrangePanels(bool flipX, Vector2 containerSize)
+        {
+            // Posición cursor local para ir colocando paneles
+            // Empezamos siempre desde la esquina superior izquierda del contenedor (0,0 local)
+            // El Pivot del padre se encarga de mover el contenedor, no nosotros.
+            float currentX = 0f;
+            float currentY = 0f;
+
+            // Recorremos los paneles activos
+            // Importante: _panelsPool[0] es el PRIMARIO
+
+            // CASO HORIZONTAL CON FLIP (La lógica especial)
+            if (_currentOrientation == TooltipOrientation.Horizontal && flipX)
+            {
+                // Si hay Flip Horizontal (estamos pegados al borde derecho):
+                // El padre tiene Pivot X=1 (Right). El Mouse está a la derecha del contenedor.
+                // Queremos que el PANEL PRIMARIO [0] esté pegado al Mouse (a la derecha).
+                // Queremos que el PANEL SECUNDARIO [1] esté a la izquierda del primario.
+
+                // Estrategia: Llenar de Derecha a Izquierda.
+                currentX = containerSize.x; // Empezamos al final
+
+                for (int i = 0; i < _panelsPool.Count; i++)
+                {
+                    var panel = _panelsPool[i];
+                    if (!panel.gameObject.activeSelf) continue;
+
+                    ConfigurePanelAnchor(panel);
+
+                    float w = panel.Rect.sizeDelta.x;
+
+                    // Nos movemos a la izquierda para encontrar el punto de inicio de este panel
+                    currentX -= w;
+
+                    panel.Rect.anchoredPosition = new Vector2(currentX, 0);
+
+                    // Espacio para el siguiente (hacia la izquierda)
+                    currentX -= spacing;
+                }
+            }
+            else
+            {
+                // CASO NORMAL (Izquierda a Derecha) o VERTICAL
+                for (int i = 0; i < _panelsPool.Count; i++)
+                {
+                    var panel = _panelsPool[i];
+                    if (!panel.gameObject.activeSelf) continue;
+
+                    ConfigurePanelAnchor(panel);
+
+                    float w = panel.Rect.sizeDelta.x;
+                    float h = panel.Rect.sizeDelta.y;
+
+                    panel.Rect.anchoredPosition = new Vector2(currentX, currentY);
+
+                    if (_currentOrientation == TooltipOrientation.Horizontal)
+                    {
+                        currentX += w + spacing;
+                    }
+                    else // Vertical
+                    {
+                        currentY -= (h + spacing); // Hacia abajo
+                    }
+                }
+            }
+        }
+
+        private void ConfigurePanelAnchor(STPanel panel)
+        {
+            // Aseguramos que los paneles hijos tengan anclaje Top-Left standard
+            // para que nuestras matemáticas de posición (0,0) funcionen.
+            panel.Rect.anchorMin = new Vector2(0, 1);
+            panel.Rect.anchorMax = new Vector2(0, 1);
+            panel.Rect.pivot = new Vector2(0, 1);
+        }
+
+        private Vector2 CalculateTotalSize()
+        {
+            float totalW = 0;
+            float totalH = 0;
+            float maxW = 0;
+            float maxH = 0;
+            int activeCount = 0;
+
+            foreach (var p in _panelsPool)
+            {
+                if (!p.gameObject.activeSelf) continue;
+                activeCount++;
+                float w = p.Rect.sizeDelta.x;
+                float h = p.Rect.sizeDelta.y;
+
+                if (_currentOrientation == TooltipOrientation.Horizontal)
+                {
+                    totalW += w;
+                    if (h > maxH) maxH = h;
+                }
+                else // Vertical
+                {
+                    totalH += h;
+                    if (w > maxW) maxW = w;
+                }
+            }
+
+            // Sumar espaciado
+            if (activeCount > 1)
+            {
+                float totalSpacing = (activeCount - 1) * spacing;
+                if (_currentOrientation == TooltipOrientation.Horizontal) totalW += totalSpacing;
+                else totalH += totalSpacing;
+            }
+
+            // Si es horizontal, la altura es la del panel más alto. Si es vertical, el ancho es el del más ancho.
+            return _currentOrientation == TooltipOrientation.Horizontal
+                ? new Vector2(totalW, maxH)
+                : new Vector2(maxW, totalH);
+        }
+
+        private void ApplyContainerTransform(Vector2 mousePos, bool flipX, bool flipY)
+        {
+            Vector2 finalOffset;
+            Vector2 finalPivot;
+
+            // Lógica de cuadrantes para offset y pivote
+            // Nota: El pivote del Container ayuda a que "crezca" en la dirección correcta
+            // pero el ArrangePanels se encarga de la posición interna.
+
+            if (!flipX && !flipY) // Normal (Derecha Abajo)
+            {
+                finalPivot = new Vector2(0, 1);
+                finalOffset = offsetBottomRight;
+            }
+            else if (flipX && !flipY) // Izquierda Abajo
+            {
+                finalPivot = new Vector2(1, 1);
+                finalOffset = offsetBottomLeft;
+            }
+            else if (!flipX && flipY) // Derecha Arriba
+            {
+                finalPivot = new Vector2(0, 0);
+                finalOffset = offsetTopRight;
+            }
+            else // Izquierda Arriba
+            {
+                finalPivot = new Vector2(1, 0);
+                finalOffset = offsetTopLeft;
+            }
+
+            _rect.pivot = finalPivot;
+            _rect.position = new Vector3(mousePos.x + finalOffset.x, mousePos.y + finalOffset.y, 0f);
+        }
+
+        // --- HELPERS INTERNOS ---
+
+        private IEnumerator RebuildRoutine()
+        {
+            // 1. Reconstruir tamaño interno de cada panel (ContentSizeFitter)
+            foreach (var p in _panelsPool)
+                if (p.gameObject.activeSelf) yield return p.RebuildLayoutRoutine();
+
             yield return new WaitForEndOfFrame();
 
-            // Forzar reconstrucción para obtener el ancho "natural" (sin saltos de línea)
-            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect);
+            // 2. Calcular posiciones una vez que tenemos los tamaños
+            FollowMouseAndLayout();
 
-            // PASO 2: Comprobar si nos pasamos del máximo
-            if (contentLE != null)
-            {
-                // Si el ancho natural supera el máximo permitido...
-                if (contentRect.rect.width > maxTooltipWidth)
-                {
-                    // ...entonces SÍ aplicamos el límite para forzar el Word Wrap (salto de línea)
-                    contentLE.preferredWidth = maxTooltipWidth;
-                }
-                else
-                {
-                    // Si es pequeño, nos aseguramos que siga en automático para que se ajuste al texto
-                    contentLE.preferredWidth = -1;
-                }
-            }
-
-            // PASO 3: Reconstrucción Final
-            // Ahora que hemos decidido si limitar o no, reconstruimos todo el árbol
-            LayoutRebuilder.ForceRebuildLayoutImmediate(contentRect); // Ajustar hijo
-            LayoutRebuilder.ForceRebuildLayoutImmediate(rect); // Ajustar padre (fondo)
-
-            // Posicionar y Mostrar
-            FollowMouseAndClamp();
-            canvasGroup.alpha = 1f;
+            // 3. Mostrar
+            _canvasGroup.alpha = 1f;
         }
 
-        // =================================================================================
-        // FACTORIES
-        // =================================================================================
-
-        private void CreateTextBlock(TooltipTextBlock blockData, SimpleTooltipStyle style)
+        private void PreparePanels(int count)
         {
-            if (style.TextPrefab == null) return;
-            GameObject go = Instantiate(style.TextPrefab, contentParent);
-            TextMeshProUGUI tmp = go.GetComponent<TextMeshProUGUI>();
-
-            if (tmp != null)
+            while (_panelsPool.Count < count)
             {
-                tmp.text = blockData.Text;
-                ApplyTextStyle(tmp, blockData.KeyStyleName, style, true);
-            }
+                GameObject go = Instantiate(panelPrefab, transform);
+                // Importante: Asegurar que los paneles no tengan anclajes extraños que rompan nuestro cálculo manual
+                var rt = go.GetComponent<RectTransform>();
+                rt.anchorMin = new Vector2(0, 1);
+                rt.anchorMax = new Vector2(0, 1);
+                rt.pivot = new Vector2(0, 1);
 
-            activeBlocks.Add(go);
-        }
-
-        private void CreateImageBlock(TooltipImageBlock blockData, SimpleTooltipStyle style)
-        {
-            if (style.ImagePrefab == null) return;
-            GameObject go = Instantiate(style.ImagePrefab, contentParent);
-            Image img = go.GetComponent<Image>();
-            if (img != null)
-            {
-                img.sprite = blockData.Sprite;
-                img.preserveAspect = true;
-            }
-
-            activeBlocks.Add(go);
-        }
-
-        private void CreateSeparatorBlock(TooltipSeparatorBlock block, SimpleTooltipStyle style)
-        {
-            if (style.SeparatorPrefab == null) return;
-            GameObject go = Instantiate(style.SeparatorPrefab, contentParent);
-            Image img = go.GetComponent<Image>();
-            if (img != null)
-            {
-                img.sprite = block.SeparatorSprite;
-            }
-            activeBlocks.Add(go);
-        }
-
-        private void CreateHeaderBlock(TooltipHeaderBlock block, SimpleTooltipStyle style)
-        {
-            if (style.HeaderPrefab == null) return;
-            GameObject go = Instantiate(style.HeaderPrefab, contentParent);
-
-            // Asumimos una estructura en el Prefab:
-            // - IconImage (Image)
-            // - TextsContainer (VerticalLayout)
-            //    - TitleText (TMP)
-            //    - SubtitleText (TMP)
-
-            // Buscamos componentes por nombre o jerarquía (Simple y efectivo)
-            // Nota: Para máxima performance, crea un script "HeaderViewReference" en el prefab, pero esto funciona bien.
-
-            Image icon = go.transform.Find("IconImage")?.GetComponent<Image>();
-            TextMeshProUGUI title = go.transform.Find("TextsContainer/TitleText")?.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI subtitle =
-                go.transform.Find("TextsContainer/SubtitleText")?.GetComponent<TextMeshProUGUI>();
-
-            if (icon) icon.sprite = block.Icon;
-
-            if (title)
-            {
-                title.text = block.Title;
-                ApplyTextStyle(title, block.KeyTitleStyle, style, true);
-            }
-
-            if (subtitle)
-            {
-                subtitle.text = block.Subtitle;
-                ApplyTextStyle(subtitle, block.KeySubtitleStyle, style, true);
-            }
-
-            activeBlocks.Add(go);
-        }
-
-        private void CreateKeyValueBlock(TooltipKeyValueBlock block, SimpleTooltipStyle style)
-        {
-            if (style.KeyValuePrefab == null) return;
-            GameObject go = Instantiate(style.KeyValuePrefab, contentParent);
-
-            // Asumimos Prefab: HorizontalLayout -> [KeyText (Alignment Left)] [ValueText (Alignment Right)]
-            TextMeshProUGUI keyTxt = go.transform.Find("KeyText")?.GetComponent<TextMeshProUGUI>();
-            TextMeshProUGUI valTxt = go.transform.Find("ValueText")?.GetComponent<TextMeshProUGUI>();
-            Image icon = go.transform.Find("Icon")?.GetComponent<Image>(); // Opcional
-
-            if (keyTxt)
-            {
-                keyTxt.text = block.Key;
-                ApplyTextStyle(keyTxt, block.KeyKeyStyle, style);
-            }
-
-            if (valTxt)
-            {
-                valTxt.text = block.Value;
-                ApplyTextStyle(valTxt, block.KeyValueStyle, style);
-            }
-
-            if (icon)
-            {
-                icon.gameObject.SetActive(block.Icon != null);
-                icon.sprite = block.Icon;
-            }
-
-            activeBlocks.Add(go);
-        }
-
-        // Helper para evitar repetir código de estilos
-        private void ApplyTextStyle(TextMeshProUGUI tmp, string styleId, SimpleTooltipStyle style, bool force = false)
-        {
-            if (tmp == null) return;
-            var styleDef = style.GetTextStyle(styleId);
-            if (styleDef != null)
-            {
-                tmp.font = styleDef.fontAsset;
-                tmp.fontSize = styleDef.fontSize;
-                tmp.color = styleDef.color;
-                if (force) tmp.alignment = styleDef.alignment; // Cuidado: En KeyValue blocks, la alineación la dicta el prefab, no el estilo
-                tmp.fontStyle = styleDef.fontStyle;
+                _panelsPool.Add(go.GetComponent<STPanel>());
             }
         }
 
-        private void FollowMouseAndClamp()
+        private void SetupLayoutGroup(HorizontalOrVerticalLayoutGroup group)
         {
-            Vector2 mousePos = Vector2.zero;
+            group.childAlignment = TextAnchor.UpperLeft;
+            group.childControlHeight = true;
+            group.childControlWidth = true;
+            group.childForceExpandHeight = false;
+            group.childForceExpandWidth = false;
+        }
 
+        private Vector2 GetMousePosition()
+        {
 #if ENABLE_LEGACY_INPUT_MANAGER
-            mousePos = Input.mousePosition;
+            return Input.mousePosition;
 #elif ENABLE_INPUT_SYSTEM
-    // Usamos Pointer.current para dar soporte tanto a Mouse como a Pen/Touch simulado
-    if (UnityEngine.InputSystem.Pointer.current != null)
-    {
-        mousePos = UnityEngine.InputSystem.Pointer.current.position.ReadValue();
-    }
+                if (UnityEngine.InputSystem.Pointer.current != null)
+                    return UnityEngine.InputSystem.Pointer.current.position.ReadValue();
+                return Vector2.zero;
+#else
+                return Input.mousePosition;
 #endif
-            float realWidth = rect.sizeDelta.x * transform.lossyScale.x;
-            float realHeight = rect.sizeDelta.y * transform.lossyScale.y;
-
-            bool flipX = (mousePos.x + realWidth > Screen.width);
-            bool flipY = (mousePos.y + realHeight > Screen.height);
-
-            Vector2 finalPivot = new Vector2(flipX ? 1 : 0, flipY ? 1 : 0);
-            Vector2 finalOffset;
-
-            if (!flipX && !flipY) finalOffset = offsetTopRight;
-            else if (flipX && !flipY) finalOffset = offsetTopLeft;
-            else if (!flipX && flipY) finalOffset = offsetBottomRight;
-            else finalOffset = offsetBottomLeft;
-
-            rect.pivot = finalPivot;
-            rect.position = new Vector3(mousePos.x + finalOffset.x, mousePos.y + finalOffset.y, 0f);
         }
     }
 }
